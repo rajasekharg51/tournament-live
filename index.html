@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tournament Live</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <script src="https://tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans pb-16">
+
+  <!-- Header -->
+  <header class="bg-blue-600 p-4 shadow-lg sticky top-0 z-10 flex justify-between items-center">
+    <div>
+      <h1 class="text-xl font-bold tracking-wide">🏆 Tournament Live</h1>
+      <p id="roleBadge" class="text-xs text-blue-200">Public View (Read-Only)</p>
+    </div>
+    <div>
+      <button id="loginBtn" onclick="toggleLoginModal()" class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium">Admin Login</button>
+      <button id="logoutBtn" onclick="logoutAdmin()" class="hidden bg-red-600 text-white px-3 py-1.5 rounded text-sm font-medium">Logout</button>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="flex bg-slate-800 border-b border-slate-700 sticky top-16 z-10">
+    <button onclick="switchTab('groups')" id="tab-groups" class="flex-1 py-3 text-center font-semibold border-b-2 border-blue-500 text-blue-400">Groups & Standings</button>
+    <button onclick="switchTab('matches')" id="tab-matches" class="flex-1 py-3 text-center font-semibold text-slate-400">Group Matches</button>
+    <button onclick="switchTab('knockouts')" id="tab-knockouts" class="flex-1 py-3 text-center font-semibold text-slate-400">Knockouts</button>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="max-w-3xl mx-auto p-4 space-y-6">
+    <!-- Admin Controls -->
+    <div id="adminControls" class="hidden bg-slate-800 p-4 rounded-lg border border-blue-500/40 flex flex-wrap gap-2 justify-between items-center">
+      <span class="text-xs text-slate-300">Admin Mode: Tap ✏️ next to any team to edit player names.</span>
+      <button onclick="resetDatabase()" class="bg-amber-600 hover:bg-amber-500 text-xs px-3 py-2 rounded font-bold">Initialize / Reset All</button>
+    </div>
+
+    <div id="view-groups" class="space-y-6"></div>
+    <div id="view-matches" class="hidden space-y-4"></div>
+    <div id="view-knockouts" class="hidden space-y-6"></div>
+  </main>
+
+  <!-- Admin Login Modal -->
+  <div id="loginModal" class="hidden fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-800 p-6 rounded-xl w-full max-w-sm space-y-4 border border-slate-700">
+      <h2 class="text-lg font-bold">Admin Login</h2>
+      <input id="adminEmail" type="email" placeholder="Admin Email" class="w-full p-2.5 rounded bg-slate-900 border border-slate-700 text-white">
+      <input id="adminPass" type="password" placeholder="Password" class="w-full p-2.5 rounded bg-slate-900 border border-slate-700 text-white">
+      <p id="loginError" class="text-red-400 text-xs hidden"></p>
+      <div class="flex justify-end gap-2">
+        <button onclick="toggleLoginModal()" class="px-4 py-2 text-slate-400">Cancel</button>
+        <button onclick="loginAdmin()" class="bg-blue-600 px-4 py-2 rounded font-semibold">Login</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDKs -->
+  <script type="module">
+    import { initializeApp } from "https://gstatic.com";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://gstatic.com";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://gstatic.com";
+
+    // ==========================================
+    // PASTE YOUR FIREBASE CONFIG BELOW
+    // ==========================================
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_://firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_://appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+    // ==========================================
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    const tournamentRef = doc(db, "tournaments", "main");
+
+    let isAdmin = false;
+    let state = null;
+
+    // Initial Tournament Data
+    const initialData = {
+      groups: {
+        A: [
+          { id: "A1", name: "Harsha(55) & Sathya vardhan(17)" },
+          { id: "A2", name: "Rajasekhar(117) & Ramesh(104)" },
+          { id: "A3", name: "Bhargav(65) & Kiran(75)" },
+          { id: "A4", name: "Team 16 (TBD)" }
+        ],
+        B: [
+          { id: "B1", name: "Ravi(31) & Uday(73)" },
+          { id: "B2", name: "Kiran Pal(80B) & Ajay(44)" },
+          { id: "B3", name: "Nagababu(108) & Tony(117)" },
+          { id: "B4", name: "Team 15 (TBD)" }
+        ],
+        C: [
+          { id: "C1", name: "Rajendra(97&98) & Bhanu(75)" },
+          { id: "C2", name: "Bharathi das(82) & Madhu(99)" },
+          { id: "C3", name: "Pradeep(79) & Prudhvi(117)" },
+          { id: "C4", name: "Kishore(75) & Lakshminadh(102)" }
+        ],
+        D: [
+          { id: "D1", name: "Anil(73) & Rambabu(80)" },
+          { id: "D2", name: "Sudhakar(84) & Venu(104)" },
+          { id: "D3", name: "Uma Mahesh(88) & Saikiran(88)" },
+          { id: "D4", name: "Krishna(5) & Rajesh(97&98)" }
+        ]
+      },
+      groupMatches: [],
+      knockouts: {
+        qf1: { label: "Quarter-Final 1 (A1 vs B2)", t1: "TBD (A1)", t2: "TBD (B2)", s1: 0, s2: 0, winner: "" },
+        qf2: { label: "Quarter-Final 2 (A2 vs B1)", t1: "TBD (A2)", t2: "TBD (B1)", s1: 0, s2: 0, winner: "" },
+        qf3: { label: "Quarter-Final 3 (C1 vs D2)", t1: "TBD (C1)", t2: "TBD (D2)", s1: 0, s2: 0, winner: "" },
+        qf4: { label: "Quarter-Final 4 (C2 vs D1)", t1: "TBD (C2)", t2: "TBD (D1)", s1: 0, s2: 0, winner: "" },
+        sf1: { label: "Semi-Final 1 (QF1 vs QF3)", t1: "Winner QF1", t2: "Winner QF3", s1: 0, s2: 0, winner: "" },
+        sf2: { label: "Semi-Final 2 (QF2 vs QF4)", t1: "Winner QF2", t2: "Winner QF4", s1: 0, s2: 0, winner: "" },
+        third: { label: "3rd Place Match (SF1 Loser vs SF2 Loser)", t1: "Loser SF1", t2: "Loser SF2", s1: 0, s2: 0, winner: "" },
+        final: { label: "Grand Final (SF1 Winner vs SF2 Winner)", t1: "Winner SF1", t2: "Winner SF2", s1: 0, s2: 0, winner: "" }
+      }
+    };
+
+    // Generate Round-Robin Matches for each group
+    ["A", "B", "C", "D"].forEach(g => {
+      const teams = initialData.groups[g];
+      for (let i = 0; i < teams.length; i++) {
+        for (let j = i + 1; j < teams.length; j++) {
+          initialData.groupMatches.push({
+            id: `${g}_${i}_${j}`,
+            group: g,
+            t1: teams[i].name,
+            t2: teams[j].name,
+            s1: 0,
+            s2: 0,
+            completed: false
+          });
+        }
+      }
+    });
+
+    // Auth Listener
+    onAuthStateChanged(auth, (user) => {
+      isAdmin = !!user;
+      document.getElementById("loginBtn").classList.toggle("hidden", isAdmin);
+      document.getElementById("logoutBtn").classList.toggle("hidden", !isAdmin);
+      document.getElementById("adminControls").classList.toggle("hidden", !isAdmin);
+      document.getElementById("roleBadge").innerText = isAdmin ? "Admin Access (Can Edit)" : "Public View (Read-Only)";
+      if (state) renderAll();
+    });
+
+    // Real-time Firestore Listener
+    onSnapshot(tournamentRef, (docSnap) => {
+      if (docSnap.exists()) {
+        state = docSnap.data();
+        renderAll();
+      } else {
+        state = JSON.parse(JSON.stringify(initialData));
+        renderAll();
+      }
+    });
+
+    // Calculate Standings & Auto-Populate Knockouts
+    function calculateStandingsAndKnockouts() {
+      const standings = { A: [], B: [], C: [], D: [] };
+
+      ["A", "B", "C", "D"].forEach(g => {
+        const stats = {};
+        state.groups[g].forEach(t => {
+          stats[t.name] = { name: t.name, p: 0, w: 0, l: 0, pd: 0 };
+        });
+
+        state.groupMatches.filter(m => m.group === g && m.completed).forEach(m => {
+          if (!stats[m.t1]) stats[m.t1] = { name: m.t1, p: 0, w: 0, l: 0, pd: 0 };
+          if (!stats[m.t2]) stats[m.t2] = { name: m.t2, p: 0, w: 0, l: 0, pd: 0 };
+          stats[m.t1].p++;
+          stats[m.t2].p++;
+          stats[m.t1].pd += (m.s1 - m.s2);
+          stats[m.t2].pd += (m.s2 - m.s1);
+          if (m.s1 > m.s2) { stats[m.t1].w++; stats[m.t2].l++; }
+          else if (m.s2 > m.s1) { stats[m.t2].w++; stats[m.t1].l++; }
+        });
+
+        standings[g] = Object.values(stats).sort((a, b) => b.w - a.w || b.pd - a.pd);
+      });
+
+      // Auto-populate QFs from top 2 of each group
+      const k = state.knockouts;
+      if (standings.A.length >= 2 && standings.B.length >= 2) {
+        k.qf1.t1 = standings.A[0].name; // A1
+        k.qf1.t2 = standings.B[1].name; // B2
+        k.qf2.t1 = standings.A[1].name; // A2
+        k.qf2.t2 = standings.B[0].name; // B1
+      }
+      if (standings.C.length >= 2 && standings.D.length >= 2) {
+        k.qf3.t1 = standings.C[0].name; // C1
+        k.qf3.t2 = standings.D[1].name; // D2
+        k.qf4.t1 = standings.C[1].name; // C2
+        k.qf4.t2 = standings.D[0].name; // D1
+      }
+
+      // Auto-populate Semis from QF Winners
+      if (k.qf1.winner) k.sf1.t1 = k.qf1.winner;
+      if (k.qf3.winner) k.sf1.t2 = k.qf3.winner;
+      if (k.qf2.winner) k.sf2.t1 = k.qf2.winner;
+      if (k.qf4.winner) k.sf2.t2 = k.qf4.winner;
+
+      // Auto-populate Finals & 3rd Place from Semi Winners/Losers
+      if (k.sf1.winner) {
+        k.final.t1 = k.sf1.winner;
+        k.third.t1 = (k.sf1.winner === k.sf1.t1) ? k.sf1.t2 : k.sf1.t1;
+      }
+      if (k.sf2.winner) {
+        k.final.t2 = k.sf2.winner;
+        k.third.t2 = (k.sf2.winner === k.sf2.t1) ? k.sf2.t2 : k.sf2.t1;
+      }
+
+      return standings;
+    }
+
+    function renderAll() {
+      const standings = calculateStandingsAndKnockouts();
+
+    
